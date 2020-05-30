@@ -55,6 +55,8 @@ uint8_t nr_dht = 0;
 uint8_t nr_bme = 0;
 uint8_t nr_oled = 0;
 bool led_config_invert;
+uint8_t maxErrRead = 3; // maksymalna liczba błędów odczytu regulatora zanim w aplikacji pojawi się błąd odczytu (---)
+
 
 uint8_t MAX_DS18B20;
 _ds18b20_channel_t ds18b20_channel[MAX_DS18B20_ARR];
@@ -114,9 +116,12 @@ SoftwareSerial S(D1, D2);
 
 ModbusRTU mb;
 
-uint8_t readingPart=0;
+uint8_t readingPart = 0;
 uint16_t inputReg[20];
-uint16_t errorCounter=0;
+uint16_t errorCounter = 0;
+float errorPercentage = 0;
+uint16_t validReading = 0;
+uint16_t errorLastReading[4] = {0, 0, 0, 0};
 
 float pvArrayInputVoltage = -275;
 float pvArrayInputCurrent = -275;
@@ -135,9 +140,12 @@ float totalGeneratedEnergy = -275;
 
 bool cbRead(Modbus::ResultCode event, uint16_t transactionId, void* data) {
   //Serial.printf_P("Request result: 0x%02X, Mem: %d\n", event, ESP.getFreeHeap());
-    
-  if ( event == 0x00){
-    if (readingPart == 1){
+
+  if ( event == 0x00) {
+    validReading++;
+
+    if (readingPart == 1) {
+      errorLastReading[1] = 0;
       //Serial.println("\r\nODCZYT 1 OK");
       pvArrayInputVoltage = (float)inputReg[0] / 100;
       pvArrayInputCurrent = (float)inputReg[1] / 100;
@@ -148,7 +156,7 @@ bool cbRead(Modbus::ResultCode event, uint16_t transactionId, void* data) {
       loadPower = (float)((inputReg[15] << 16) + inputReg[14]) / 100;
       batteryTemperature = (float)inputReg[16] / 100;
       temperatureInsideEquipment = (float)inputReg[17] / 100;
-    
+
       Serial.print("PV array input voltage: ");
       Serial.println(pvArrayInputVoltage);
       Serial.print("PV array input current: ");
@@ -164,67 +172,82 @@ bool cbRead(Modbus::ResultCode event, uint16_t transactionId, void* data) {
       Serial.print("Load power: ");
       Serial.println(loadPower);
       Serial.print("Battery Temperature: ");
-      Serial.println(batteryTemperature);   
+      Serial.println(batteryTemperature);
       Serial.print("Temperature inside equipment: ");
       Serial.println(temperatureInsideEquipment);
 
-      for(int i = 1; i < 20; i++) inputReg[i] = 0;
+      for (int i = 1; i < 20; i++) inputReg[i] = 0;
     }
-    else if (readingPart == 2){
+    else if (readingPart == 2) {
+      errorLastReading[2] = 0;
       //Serial.println("\r\nODCZYT 2 OK");
       batterySOC = inputReg[0];
       remoteBatteryTemperature = (float)inputReg[1] / 100;
-      
+
       Serial.print("Battery SOC: ");
       Serial.println(batterySOC);
       Serial.print("Remote battery temperature: ");
       Serial.println(remoteBatteryTemperature);
 
-      for(int i = 1; i < 20; i++) inputReg[i] = 0;
-    }   
-    else if (readingPart == 3){
+      for (int i = 1; i < 20; i++) inputReg[i] = 0;
+    }
+    else if (readingPart == 3) {
+      errorLastReading[3] = 0;
       //Serial.println("\r\nODCZYT 3 OK");
       totalGeneratedEnergy = (float)((inputReg[19] << 16) + inputReg[18]) / 100;
-      
+
       Serial.print("Total generated energy: ");
       Serial.println(totalGeneratedEnergy);
       Serial.print("\r\n");
       Serial.print("\r\n");
       Serial.print("\r\n");
 
-      for(int i = 1; i < 20; i++) inputReg[i] = 0;
-    }  
+      for (int i = 1; i < 20; i++) inputReg[i] = 0;
+    }
     return true;
   }
 
-  else{
+
+  else {
     errorCounter++;
-    if (readingPart == 1){
-      pvArrayInputVoltage = -275;
-      pvArrayInputCurrent = -275;
-      pvArrayInputPower = -275;
-      batteryPower = -275;
-      loadVoltage = -275;
-      loadCurrent = -275;
-      loadPower = -275;
-      batteryTemperature = -275;
-      temperatureInsideEquipment = -275;
+    if (readingPart == 1) {
+      errorLastReading[1]++;
+      
+      if (errorLastReading[1] > maxErrRead) {
+        pvArrayInputVoltage = -275;
+        pvArrayInputCurrent = -275;
+        pvArrayInputPower = -275;
+        batteryPower = -275;
+        loadVoltage = -275;
+        loadCurrent = -275;
+        loadPower = -275;
+        batteryTemperature = -275;
+        temperatureInsideEquipment = -275;
+      }
       Serial.println("\r\nREGULATOR READING ERROR PART 1");
     }
-    else if (readingPart == 2){
-      batterySOC = -275;
-      remoteBatteryTemperature = -275;
+    else if (readingPart == 2) {
+      errorLastReading[2]++;
+      
+      if (errorLastReading[2] > maxErrRead) {
+        batterySOC = -275;
+        remoteBatteryTemperature = -275;
+      }
       Serial.println("\r\nREGULATOR READING ERROR PART 2");
     }
-    else if (readingPart == 3){
-      totalGeneratedEnergy = -275;
+    else if (readingPart == 3) {
+      errorLastReading[3]++;
+      
+      if (errorLastReading[3] > maxErrRead) {
+        totalGeneratedEnergy = -275;
+      }
       Serial.println("\r\nREGULATOR READING ERROR PART 3");
     }
-    
-    
+
+
 
   }
-  
+
   return false;
 }
 //////////////////////////////////
@@ -283,18 +306,18 @@ void setup() {
   arduino_OTA_start();
 #endif
 
-///////////// LS1024B ////////////
+  ///////////// LS1024B ////////////
   S.begin(115200, SWSERIAL_8N1);
   mb.begin(&S);
   mb.master();
-//////////////////////////////////
+  //////////////////////////////////
 
 }
 
 //*********************************************************************************************************
 
 ///////////// LS1024B ////////////
-const long interval = 10000; // 
+const long interval = 10000; //
 unsigned long previousMillis = 0;
 unsigned long currentMillis = 0;
 //////////////////////////////////
@@ -316,34 +339,34 @@ void loop() {
   drd.loop();
 
   ///////////// LS1024B ////////////
-   currentMillis = millis();
+  currentMillis = millis();
 
-  if (interval - 3950 > currentMillis - previousMillis && currentMillis - previousMillis >= interval - 4000){
+  if (interval - 3950 > currentMillis - previousMillis && currentMillis - previousMillis >= interval - 4000) {
     mb.readIreg(1, 12544, inputReg, 18, cbRead); //0x3100
     readingPart = 1;
-    Serial.println(currentMillis - previousMillis);
+    //Serial.println(currentMillis - previousMillis);
     previousMillis = previousMillis - 50;
-    Serial.println("\r\nODCZYT 1");
+    //Serial.println("\r\nODCZYT 1");
   }
-  else if (interval - 1950 > currentMillis - previousMillis && currentMillis - previousMillis >= interval - 2000){
+  else if (interval - 1950 > currentMillis - previousMillis && currentMillis - previousMillis >= interval - 2000) {
     mb.readIreg(1, 12570, inputReg, 2, cbRead); //0X311A
     readingPart = 2;
-    Serial.println(currentMillis - previousMillis);
+    //Serial.println(currentMillis - previousMillis);
     previousMillis = previousMillis - 50;
-    Serial.println("\r\nODCZYT 2");   
+    //Serial.println("\r\nODCZYT 2");
   }
-  else if (currentMillis - previousMillis >= interval){
+  else if (currentMillis - previousMillis >= interval) {
     mb.readIreg(1, 13056, inputReg, 20, cbRead); //0X3300
     readingPart = 3;
-    Serial.println(currentMillis - previousMillis);
+    //Serial.println(currentMillis - previousMillis);
     previousMillis = currentMillis;
-    Serial.println("\r\nODCZYT 3");
-    }
-    
+    //Serial.println("\r\nODCZYT 3");
+  }
+
   mb.task();
   yield();
   //////////////////////////////////
-  
+
 }
 //*********************************************************************************************************
 
@@ -766,7 +789,7 @@ double get_pressure(int channelNumber, double last_val) {
 }
 
 double get_temperature(int channelNumber, double last_val) {
-    
+
   double val = -275;
 
   switch (channelNumber)
@@ -802,10 +825,12 @@ double get_temperature(int channelNumber, double last_val) {
       val = batterySOC;
       break;
     case 11:
-     val = totalGeneratedEnergy;
+      val = totalGeneratedEnergy;
       break;
     case 12:
-     val = errorCounter; //licznik błędów odczytu regulatora LS1024B
+      errorPercentage = (float)errorCounter / (float)validReading * 100;
+      if (errorPercentage > 100 || errorPercentage == 1.0 / 0.0) errorPercentage = 100;
+      val = errorPercentage; //procent błędów odczytu regulatora LS1024B
       break;
 
   };
