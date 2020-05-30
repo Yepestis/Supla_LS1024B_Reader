@@ -128,7 +128,7 @@
 //INNE***********************************************************************************************
 #else
 
-#define DEFAULT_HOSTNAME      "TEST"
+#define DEFAULT_HOSTNAME      "Supla LS1024B Reader"
 
 #define RELAY1_PIN            12
 #define BUTTON1_PIN           0

@@ -7,7 +7,7 @@
 #include <SuplaDevicePrimary.h>
 
 #define  SUPLA_DEVICE_NAME     "Supla LS1024B Reader"
-#define  CONFIG_WIFI_LOGIN     "Supla LS1024B Reader"
+#define  CONFIG_WIFI_LOGIN     "Supla"
 #define  CONFIG_WIFI_PASSWORD  ""
 
 #define  DEFAULT_LOGIN         "admin"
@@ -21,7 +21,7 @@
 
 //DS18B20 ************************************************************************************************
 extern uint8_t MAX_DS18B20;
-#define MAX_DS18B20_ARR 8
+#define MAX_DS18B20_ARR 12
 #define  TEMPERATURE_PRECISION  12  // rozdzielczość czujnika DS 9 -12 bit
 #define TEMPERATURE_NOT_AVAILABLE -275
 

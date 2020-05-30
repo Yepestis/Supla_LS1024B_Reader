@@ -29,6 +29,9 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
+#include <ModbusRTU.h>
+#include <SoftwareSerial.h>
+
 #include "supla_settings.h"
 #include "supla_eeprom.h"
 #include "supla_web_server.h"
@@ -106,6 +109,126 @@ char Location_id[MAX_SUPLA_ID];
 char Location_Pass[MAX_SUPLA_PASS];
 //*********************************************************************************************************
 
+///////////// LS1024B ////////////
+SoftwareSerial S(D1, D2);
+
+ModbusRTU mb;
+
+uint8_t readingPart=0;
+uint16_t inputReg[20];
+uint16_t errorCounter=0;
+
+float pvArrayInputVoltage = -275;
+float pvArrayInputCurrent = -275;
+float pvArrayInputPower = -275;
+float batteryPower = -275;
+float loadVoltage = -275;
+float loadCurrent = -275;
+float loadPower = -275;
+float batteryTemperature = -275;
+float temperatureInsideEquipment = -275;
+
+float batterySOC = -275;
+float remoteBatteryTemperature = -275;
+
+float totalGeneratedEnergy = -275;
+
+bool cbRead(Modbus::ResultCode event, uint16_t transactionId, void* data) {
+  //Serial.printf_P("Request result: 0x%02X, Mem: %d\n", event, ESP.getFreeHeap());
+    
+  if ( event == 0x00){
+    if (readingPart == 1){
+      //Serial.println("\r\nODCZYT 1 OK");
+      pvArrayInputVoltage = (float)inputReg[0] / 100;
+      pvArrayInputCurrent = (float)inputReg[1] / 100;
+      pvArrayInputPower = (float)((inputReg[3] << 16) + inputReg[2]) / 100;
+      batteryPower = (float)((inputReg[7] << 16) + inputReg[6]) / 100;
+      loadVoltage = (float)inputReg[12] / 100;
+      loadCurrent = (float)inputReg[13] / 100;
+      loadPower = (float)((inputReg[15] << 16) + inputReg[14]) / 100;
+      batteryTemperature = (float)inputReg[16] / 100;
+      temperatureInsideEquipment = (float)inputReg[17] / 100;
+    
+      Serial.print("PV array input voltage: ");
+      Serial.println(pvArrayInputVoltage);
+      Serial.print("PV array input current: ");
+      Serial.println(pvArrayInputCurrent);
+      Serial.print("PV array input power: ");
+      Serial.println(pvArrayInputPower);
+      Serial.print("Battery power: ");
+      Serial.println(batteryPower);
+      Serial.print("Load voltage: ");
+      Serial.println(loadVoltage);
+      Serial.print("Load current: ");
+      Serial.println(loadCurrent);
+      Serial.print("Load power: ");
+      Serial.println(loadPower);
+      Serial.print("Battery Temperature: ");
+      Serial.println(batteryTemperature);   
+      Serial.print("Temperature inside equipment: ");
+      Serial.println(temperatureInsideEquipment);
+
+      for(int i = 1; i < 20; i++) inputReg[i] = 0;
+    }
+    else if (readingPart == 2){
+      //Serial.println("\r\nODCZYT 2 OK");
+      batterySOC = inputReg[0];
+      remoteBatteryTemperature = (float)inputReg[1] / 100;
+      
+      Serial.print("Battery SOC: ");
+      Serial.println(batterySOC);
+      Serial.print("Remote battery temperature: ");
+      Serial.println(remoteBatteryTemperature);
+
+      for(int i = 1; i < 20; i++) inputReg[i] = 0;
+    }   
+    else if (readingPart == 3){
+      //Serial.println("\r\nODCZYT 3 OK");
+      totalGeneratedEnergy = (float)((inputReg[19] << 16) + inputReg[18]) / 100;
+      
+      Serial.print("Total generated energy: ");
+      Serial.println(totalGeneratedEnergy);
+      Serial.print("\r\n");
+      Serial.print("\r\n");
+      Serial.print("\r\n");
+
+      for(int i = 1; i < 20; i++) inputReg[i] = 0;
+    }  
+    return true;
+  }
+
+  else{
+    errorCounter++;
+    if (readingPart == 1){
+      pvArrayInputVoltage = -275;
+      pvArrayInputCurrent = -275;
+      pvArrayInputPower = -275;
+      batteryPower = -275;
+      loadVoltage = -275;
+      loadCurrent = -275;
+      loadPower = -275;
+      batteryTemperature = -275;
+      temperatureInsideEquipment = -275;
+      Serial.println("\r\nREGULATOR READING ERROR PART 1");
+    }
+    else if (readingPart == 2){
+      batterySOC = -275;
+      remoteBatteryTemperature = -275;
+      Serial.println("\r\nREGULATOR READING ERROR PART 2");
+    }
+    else if (readingPart == 3){
+      totalGeneratedEnergy = -275;
+      Serial.println("\r\nREGULATOR READING ERROR PART 3");
+    }
+    
+    
+
+  }
+  
+  return false;
+}
+//////////////////////////////////
+
 void setup() {
   Serial.begin(74880);
   EEPROM.begin(EEPROM_SIZE);
@@ -159,9 +282,22 @@ void setup() {
 #if defined(ARDUINO_OTA)
   arduino_OTA_start();
 #endif
+
+///////////// LS1024B ////////////
+  S.begin(115200, SWSERIAL_8N1);
+  mb.begin(&S);
+  mb.master();
+//////////////////////////////////
+
 }
 
 //*********************************************************************************************************
+
+///////////// LS1024B ////////////
+const long interval = 10000; // 
+unsigned long previousMillis = 0;
+unsigned long currentMillis = 0;
+//////////////////////////////////
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -178,6 +314,36 @@ void loop() {
   ArduinoOTA.handle();
 #endif
   drd.loop();
+
+  ///////////// LS1024B ////////////
+   currentMillis = millis();
+
+  if (interval - 3950 > currentMillis - previousMillis && currentMillis - previousMillis >= interval - 4000){
+    mb.readIreg(1, 12544, inputReg, 18, cbRead); //0x3100
+    readingPart = 1;
+    Serial.println(currentMillis - previousMillis);
+    previousMillis = previousMillis - 50;
+    Serial.println("\r\nODCZYT 1");
+  }
+  else if (interval - 1950 > currentMillis - previousMillis && currentMillis - previousMillis >= interval - 2000){
+    mb.readIreg(1, 12570, inputReg, 2, cbRead); //0X311A
+    readingPart = 2;
+    Serial.println(currentMillis - previousMillis);
+    previousMillis = previousMillis - 50;
+    Serial.println("\r\nODCZYT 2");   
+  }
+  else if (currentMillis - previousMillis >= interval){
+    mb.readIreg(1, 13056, inputReg, 20, cbRead); //0X3300
+    readingPart = 3;
+    Serial.println(currentMillis - previousMillis);
+    previousMillis = currentMillis;
+    Serial.println("\r\nODCZYT 3");
+    }
+    
+  mb.task();
+  yield();
+  //////////////////////////////////
+  
 }
 //*********************************************************************************************************
 
@@ -600,50 +766,51 @@ double get_pressure(int channelNumber, double last_val) {
 }
 
 double get_temperature(int channelNumber, double last_val) {
-  int i = channelNumber - ds18b20_channel_first;
+    
+  double val = -275;
 
-  if ( i >= 0 ) {
-    if ( ds18b20_channel[i].address == "FFFFFFFFFFFFFFFF" ) return TEMPERATURE_NOT_AVAILABLE;
+  switch (channelNumber)
+  {
+    case 1:
+      val = pvArrayInputVoltage;
+      break;
+    case 2:
+      val = pvArrayInputCurrent;
+      break;
+    case 3:
+      val = pvArrayInputPower;
+      break;
+    case 4:
+      val = batteryPower;
+      break;
+    case 5:
+      val = loadVoltage;
+      break;
+    case 6:
+      val = loadCurrent;
+      break;
+    case 7:
+      val = loadPower;
+      break;
+    case 8:
+      val = batteryTemperature;
+      break;
+    case 9:
+      val = temperatureInsideEquipment;
+      break;
+    case 10:
+      val = batterySOC;
+      break;
+    case 11:
+     val = totalGeneratedEnergy;
+      break;
+    case 12:
+     val = errorCounter; //licznik błędów odczytu regulatora LS1024B
+      break;
 
-    if ( (ds18b20_channel[i].lastTemperatureRequest + 10000) <  millis() && ds18b20_channel[i].iterationComplete) {
-      sensor[i].requestTemperatures();
+  };
+  return val;
 
-      ds18b20_channel[i].iterationComplete = false;
-      ds18b20_channel[i].lastTemperatureRequest = millis();
-      //Serial.print("requestTemperatures: "); Serial.println(i);
-    }
-
-    if ( ds18b20_channel[i].lastTemperatureRequest + 5000 <  millis()) {
-      double t = -275;
-
-      if (nr_ds18b20 == 1) {
-        t = sensor[0].getTempCByIndex(0);
-      } else {
-        t = sensor[i].getTempC(ds18b20_channel[i].deviceAddress);
-      }
-
-      if (t == DEVICE_DISCONNECTED_C || t == 85.0) {
-        t = TEMPERATURE_NOT_AVAILABLE;
-      }
-
-      if (t == TEMPERATURE_NOT_AVAILABLE) {
-        ds18b20_channel[i].retryCounter++;
-        if (ds18b20_channel[i].retryCounter > 3) {
-          ds18b20_channel[i].retryCounter = 0;
-        } else {
-          t = ds18b20_channel[i].last_val;
-        }
-      } else {
-        ds18b20_channel[i].retryCounter = 0;
-      }
-
-      ds18b20_channel[i].last_val = t;
-      ds18b20_channel[i].iterationComplete = true;
-
-      //Serial.print("getTempC: "); Serial.print(i); Serial.print(" temp: "); Serial.println(t);
-    }
-  }
-  return ds18b20_channel[i].last_val;
 }
 
 void supla_led_blinking_func(void *timer_arg) {

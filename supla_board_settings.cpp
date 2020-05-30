@@ -131,11 +131,20 @@ void supla_board_configuration(void) {
 
   //INNE***********************************************************************************************
 #else
-  //add_Relay_Button(RELAY1_PIN, BUTTON1_PIN, 1);
-  //add_DS18B20_Thermometer(DS18B20_PIN);
-  //add_SHT_Sensor();
-  add_BME280_Sensor();
-  add_Oled();
+  add_Relay(RELAY1_PIN);
+  add_DS18B20_Thermometer(201);
+  add_DS18B20_Thermometer(202);
+  add_DS18B20_Thermometer(203);
+  add_DS18B20_Thermometer(204);
+  add_DS18B20_Thermometer(205);
+  add_DS18B20_Thermometer(206);
+  add_DS18B20_Thermometer(207);
+  add_DS18B20_Thermometer(208);
+  add_DS18B20_Thermometer(209);
+  add_DS18B20_Thermometer(210);
+  add_DS18B20_Thermometer(211);
+  add_DS18B20_Thermometer(212);
+
   
   add_Led_Config(LED_CONFIG_PIN);
   add_Config(CONFIG_PIN);
