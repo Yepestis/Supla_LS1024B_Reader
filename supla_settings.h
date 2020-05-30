@@ -7,7 +7,7 @@
 #include <SuplaDevicePrimary.h>
 
 #define  SUPLA_DEVICE_NAME     "Supla LS1024B Reader"
-#define  CONFIG_WIFI_LOGIN     "Supla"
+#define  CONFIG_WIFI_LOGIN     "Supla LS1024B Reader"
 #define  CONFIG_WIFI_PASSWORD  ""
 
 #define  DEFAULT_LOGIN         "admin"
